@@ -1,0 +1,417 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Water Network Simulator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: map and controls side by side, sensor tree full width below; collapses to one column on phones */
+:root{
+  --bg:#eef3f6; --surface:#ffffff; --ink:#0f2430; --muted:#55707e; --line:#d3dee5; --line-strong:#9db3bf;
+  --water:#0a6c98; --water-soft:#d9edf6; --alert:#c2410c; --alert-soft:#fde6d9; --warn:#a96a00; --warn-soft:#fbefcf;
+  --ok:#157a58; --ok-soft:#d8f0e6;
+  --font-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-data:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0b1a22; --surface:#112630; --ink:#e2eef4; --muted:#92abb8; --line:#25414e; --line-strong:#4d6b7a;
+    --water:#4db9e8; --water-soft:#13394b; --alert:#ff8c5a; --alert-soft:#3b2216; --warn:#f0b445; --warn-soft:#3a2f12;
+    --ok:#4fd0a0; --ok-soft:#12392e; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0b1a22; --surface:#112630; --ink:#e2eef4; --muted:#92abb8; --line:#25414e; --line-strong:#4d6b7a;
+  --water:#4db9e8; --water-soft:#13394b; --alert:#ff8c5a; --alert-soft:#3b2216; --warn:#f0b445; --warn-soft:#3a2f12;
+  --ok:#4fd0a0; --ok-soft:#12392e; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:15px;line-height:1.5;
+  padding-block:20px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+header h1{font-size:clamp(1.35rem,3.2vw,1.9rem);line-height:1.15;margin:0 0 4px;font-weight:600;text-wrap:balance}
+header p{margin:0;color:var(--muted);max-width:70ch}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.tag{font-family:var(--font-data);font-size:.72rem;letter-spacing:.04em;text-transform:uppercase;border:1px solid var(--line-strong);color:var(--muted);padding:2px 8px;border-radius:4px}
+.grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:900px){.grid{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.card h2{font-size:.78rem;letter-spacing:.09em;text-transform:uppercase;margin:0;color:var(--muted);font-weight:600}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button,select,input[type=number]{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line-strong);border-radius:6px;padding:7px 11px;min-height:36px}
+button{cursor:pointer;font-weight:500}
+button:hover{border-color:var(--water)}
+button.primary{background:var(--water);border-color:var(--water);color:#fff}
+:root[data-theme="dark"] button.primary{color:#04202c}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) button.primary{color:#04202c}}
+button.danger{border-color:var(--alert);color:var(--alert)}
+:focus-visible{outline:2px solid var(--water);outline-offset:2px}
+input[type=number]{width:96px}
+label.chk{display:flex;gap:6px;align-items:center;color:var(--muted);font-size:.9rem}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.stat{border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+.stat b{display:block;font-family:var(--font-data);font-size:1.35rem;font-weight:500;font-variant-numeric:tabular-nums}
+.stat span{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.stat.good b{color:var(--ok)}
+.mapbox{border:1px solid var(--line);border-radius:8px;background:var(--bg);overflow-x:auto}
+svg{display:block;width:100%;height:auto}
+.mapbox svg{min-width:460px}
+.pipe{stroke:var(--line-strong);stroke-width:2.2;fill:none;transition:stroke .25s,stroke-width .25s}
+.has-mst .pipe{opacity:.45;stroke-dasharray:4 6}
+.pipe.built{stroke:var(--water);stroke-width:5.5;opacity:1;stroke-dasharray:none}
+.pipe.consider{stroke:var(--warn);stroke-width:5;opacity:1;stroke-dasharray:none}
+.pipe.reject{stroke:var(--alert);opacity:.55;stroke-dasharray:3 6}
+.pipe.flow{stroke:var(--ok);stroke-width:7;opacity:1;stroke-dasharray:none}
+.pipe.closed{stroke:var(--alert);stroke-width:6;opacity:1;stroke-dasharray:8 6}
+.hit{stroke:transparent;stroke-width:18;fill:none;cursor:pointer}
+.hit:hover + .pipe,.hit:focus-visible + .pipe{stroke:var(--warn)}
+.wpill{fill:var(--surface);stroke:var(--line);stroke-width:1}
+.wtxt{font-family:var(--font-data);font-size:11px;fill:var(--muted);text-anchor:middle;dominant-baseline:central;pointer-events:none}
+.node circle{fill:var(--surface);stroke:var(--water);stroke-width:2.5;transition:fill .25s,stroke .25s}
+.node text{font-family:var(--font-data);font-size:12px;font-weight:500;fill:var(--ink);text-anchor:middle;dominant-baseline:central;pointer-events:none}
+.node.plant circle{fill:var(--water)}
+.node.plant text{fill:#fff}
+:root[data-theme="dark"] .node.plant text{fill:#04202c}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .node.plant text{fill:#04202c}}
+.node.cut circle{fill:var(--alert-soft);stroke:var(--alert)}
+.node.contam circle{fill:var(--warn-soft);stroke:var(--warn)}
+.node.flow circle{fill:var(--ok-soft);stroke:var(--ok)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.8rem;color:var(--muted)}
+.legend i{display:inline-block;width:22px;height:0;border-top:4px solid;vertical-align:middle;margin-right:6px}
+.out{border-left:4px solid var(--water);background:var(--water-soft);border-radius:0 8px 8px 0;padding:10px 12px;min-height:64px}
+.out.alert{border-color:var(--alert);background:var(--alert-soft)}
+.out.ok{border-color:var(--ok);background:var(--ok-soft)}
+.out.warn{border-color:var(--warn);background:var(--warn-soft)}
+.out strong{display:block;margin-bottom:2px}
+.out p{margin:0}
+.mono{font-family:var(--font-data);font-size:.88rem}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.field>span{font-size:.78rem;color:var(--muted)}
+.field select{width:100%}
+.pair{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}
+.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;max-height:300px;overflow:auto;font-family:var(--font-data);font-size:.82rem}
+.steps li{display:flex;justify-content:space-between;gap:8px;padding:4px 8px;border-radius:5px;border:1px solid var(--line)}
+.steps li.acc{background:var(--water-soft);border-color:var(--water)}
+.steps li.rej{color:var(--muted);text-decoration:line-through}
+.steps li .r{white-space:nowrap}
+.empty{color:var(--muted);font-size:.88rem;margin:0}
+.treebox{border:1px solid var(--line);border-radius:8px;background:var(--bg);overflow-x:auto}
+.treebox svg{width:auto;min-width:100%;height:auto}
+.tl{stroke:var(--line-strong);stroke-width:1.8}
+.tn circle{fill:var(--surface);stroke:var(--water);stroke-width:2}
+.tn text{font-family:var(--font-data);font-size:12px;fill:var(--ink);text-anchor:middle;dominant-baseline:central}
+.tn.path circle{fill:var(--warn-soft);stroke:var(--warn)}
+.tn.hit circle{fill:var(--ok-soft);stroke:var(--ok)}
+.tn.alarm circle{fill:var(--alert-soft);stroke:var(--alert)}
+.note{font-size:.82rem;color:var(--muted);margin:0}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Urban Water Supply &amp; Leak Detection Network</h1>
+    <p>An interactive model of the microproject. Build the cheapest pipeline layout, break a pipe, and see exactly which zones lose water. The sensor registry below is a binary search tree.</p>
+    <div class="tags"><span class="tag">Weighted graph</span><span class="tag">Kruskal / Prim MST</span><span class="tag">BFS / DFS</span><span class="tag">Binary search tree</span></div>
+  </header>
+
+  <div class="grid">
+    <section class="card" id="map">
+      <h2>Pipeline network</h2>
+      <div class="row">
+        <button class="primary" id="bK">Build with Kruskal</button>
+        <button class="primary" id="bP">Build with Prim</button>
+        <button id="bReset">Show all candidate pipes</button>
+        <label class="chk"><input type="checkbox" id="anim" checked> Animate steps</label>
+      </div>
+      <div class="stats" aria-live="polite">
+        <div class="stat"><b id="sAll">93</b><span>All candidate pipes</span></div>
+        <div class="stat"><b id="sBuilt">-</b><span>Network built</span></div>
+        <div class="stat good"><b id="sSave">-</b><span>Cost saved</span></div>
+      </div>
+      <div class="mapbox"><svg id="svg" viewBox="0 0 640 400" role="img" aria-label="Water network map with one plant and seven zones. Click a pipe to simulate a leak."></svg></div>
+      <div class="legend">
+        <span><i style="border-color:var(--water)"></i>Built pipe</span>
+        <span><i style="border-color:var(--line-strong)"></i>Candidate</span>
+        <span><i style="border-color:var(--warn)"></i>Being checked</span>
+        <span><i style="border-color:var(--ok)"></i>Flow path</span>
+        <span><i style="border-color:var(--alert)"></i>Closed / cut off</span>
+      </div>
+      <div class="out" id="out" aria-live="polite"><strong>Start here</strong><p>Press <em>Build with Kruskal</em> to pick the cheapest set of pipes that still reaches every zone. Then click any pipe on the map to simulate a leak.</p></div>
+    </section>
+
+    <aside class="card">
+      <h2>Fault scenarios</h2>
+      <div class="pair">
+        <label class="field"><span>Trace water from the plant to</span><select id="selFlow"></select></label>
+        <button id="bFlow">Trace flow</button>
+      </div>
+      <div class="pair">
+        <label class="field"><span>Leak on pipe</span><select id="selPipe"></select></label>
+        <button class="danger" id="bLeak">Close pipe</button>
+      </div>
+      <div class="pair">
+        <label class="field"><span>Contamination found at</span><select id="selCont"></select></label>
+        <button class="danger" id="bCont">Find reach</button>
+      </div>
+      <div class="row"><button id="bClear">Clear highlights</button></div>
+      <h2>Proof of optimality</h2>
+      <div class="row"><button id="bBrute">Check all spanning trees</button></div>
+      <div class="out" id="outBrute"><p>Counts every possible 7-pipe layout of the 13 candidates and compares the cheapest with the MST.</p></div>
+      <h2>Order of decisions</h2>
+      <ul class="steps" id="log"><li class="empty" style="border:none">Build a network to see each pipe accepted or rejected.</li></ul>
+    </aside>
+  </div>
+
+  <section class="card">
+    <h2>Sensor registry (binary search tree, keyed by sensor ID)</h2>
+    <div class="row">
+      <label class="field"><span>Sensor ID</span><input type="number" id="sid" min="1" max="999999" value="65"></label>
+      <label class="field"><span>Zone</span><select id="szone"></select></label>
+      <label class="field"><span>Pressure drop (psi)</span><input type="number" id="spsi" min="0" max="1000" value="35"></label>
+    </div>
+    <div class="row">
+      <button class="primary" id="bReg">Register</button>
+      <button id="bSearch">Search</button>
+      <button id="bDel">Delete</button>
+      <button class="danger" id="bDrop">Report pressure drop</button>
+      <button id="bSorted">Insert sorted IDs (worst case)</button>
+      <button id="bSensReset">Reset sensors</button>
+    </div>
+    <div class="treebox"><svg id="tree" role="img" aria-label="Binary search tree of sensor IDs"></svg></div>
+    <div class="out" id="outS" aria-live="polite"><p>Search shows the path taken through the tree. A drop of 20 psi or more raises a leak alarm and closes the pipe that feeds that sensor's zone on the map above.</p></div>
+    <p class="note">Sample network and thresholds follow the Stage 2 report. This is a teaching model with made-up data, not a hydraulic simulation.</p>
+  </section>
+</div>
+
+<script>
+/* ===== Pure logic (same algorithms as water.cpp) ===== */
+const NAMES=['Plant','Z1','Z2','Z3','Z4','Z5','Z6','Z7'];
+const EDGES=[[0,1,4],[0,2,8],[1,2,11],[1,3,8],[2,4,7],[2,5,1],[3,4,2],[3,6,4],[4,5,6],[4,7,14],[5,7,9],[6,7,10],[1,6,9]];
+const ALARM_PSI=20;
+function makeDSU(n){const p=[...Array(n).keys()],r=Array(n).fill(0);
+  const find=x=>p[x]===x?x:(p[x]=find(p[x]));
+  return{find,unite(a,b){a=find(a);b=find(b);if(a===b)return false;if(r[a]<r[b])[a,b]=[b,a];p[b]=a;if(r[a]===r[b])r[a]++;return true;}};}
+function kruskalSteps(){
+  const order=EDGES.map((_,i)=>i).sort((a,b)=>EDGES[a][2]-EDGES[b][2]);
+  const d=makeDSU(NAMES.length),steps=[],mst=[];
+  for(const i of order){const ok=d.unite(EDGES[i][0],EDGES[i][1]);steps.push({i,ok});if(ok)mst.push(i);}
+  return{steps,mst};}
+function primSteps(){
+  const V=NAMES.length,inT=Array(V).fill(false);inT[0]=true;const mst=[],steps=[];
+  while(mst.length<V-1){let best=null;
+    EDGES.forEach((e,i)=>{for(const[a,b]of[[e[0],e[1]],[e[1],e[0]]]){
+      if(inT[a]&&!inT[b]&&(!best||e[2]<best.w||(e[2]===best.w&&(a<best.a||(a===best.a&&b<best.b)))))best={i,a,b,w:e[2]};}});
+    if(!best)break;inT[best.b]=true;mst.push(best.i);steps.push({i:best.i,ok:true,from:best.a,to:best.b});}
+  return{steps,mst};}
+const cost=list=>list.reduce((s,i)=>s+EDGES[i][2],0);
+function adjOf(mst,skip=-1){const a=NAMES.map(()=>[]);for(const i of mst){if(i===skip)continue;const[u,v]=EDGES[i];a[u].push(v);a[v].push(u);}return a;}
+function bfs(a,s){const vis=Array(a.length).fill(false),order=[],q=[s];vis[s]=true;
+  while(q.length){const u=q.shift();order.push(u);for(const v of a[u])if(!vis[v]){vis[v]=true;q.push(v);}}return order;}
+function dfsPath(a,u,t,vis=[],path=[]){vis[u]=true;path.push(u);if(u===t)return path;
+  for(const v of a[u])if(!vis[v]){const r=dfsPath(a,v,t,vis,path);if(r)return r;}path.pop();return null;}
+function parentsOf(mst){const A=adjOf(mst),par=Array(NAMES.length).fill(-1),vis=Array(NAMES.length).fill(false),q=[0];vis[0]=true;
+  while(q.length){const u=q.shift();for(const v of A[u])if(!vis[v]){vis[v]=true;par[v]=u;q.push(v);}}return par;}
+function parentEdge(mst,z){const p=parentsOf(mst)[z];return mst.find(i=>(EDGES[i][0]===z&&EDGES[i][1]===p)||(EDGES[i][1]===z&&EDGES[i][0]===p));}
+function cutOff(mst,edgeIdx){const seen=new Set(bfs(adjOf(mst,edgeIdx),0));return NAMES.map((_,i)=>i).filter(i=>i>0&&!seen.has(i));}
+function contamination(mst,z){return bfs(adjOf(mst,parentEdge(mst,z)),z);}
+function countTrees(){const E=EDGES.length,V=NAMES.length;let best=Infinity,trees=0;
+  for(let m=0;m<(1<<E);m++){let pc=0,x=m;while(x){pc+=x&1;x>>=1;}if(pc!==V-1)continue;
+    const d=makeDSU(V);let ok=true,s=0;
+    for(let i=0;i<E&&ok;i++)if(m>>i&1){if(!d.unite(EDGES[i][0],EDGES[i][1]))ok=false;s+=EDGES[i][2];}
+    if(ok){trees++;if(s<best)best=s;}}
+  return{trees,best};}
+class BST{
+  constructor(){this.root=null;this.cnt=0;}
+  insert(s){let added=false;const ins=n=>{if(!n){added=true;return{s,l:null,r:null};}
+    if(s.id<n.s.id)n.l=ins(n.l);else if(s.id>n.s.id)n.r=ins(n.r);return n;};
+    this.root=ins(this.root);if(added)this.cnt++;return added;}
+  search(id){let c=this.root;const path=[];while(c){path.push(c.s.id);if(id===c.s.id)return{node:c,path};c=id<c.s.id?c.l:c.r;}return{node:null,path};}
+  remove(id){let done=false;const rm=(n,id)=>{if(!n)return null;
+    if(id<n.s.id)n.l=rm(n.l,id);else if(id>n.s.id)n.r=rm(n.r,id);
+    else{done=true;if(!n.l)return n.r;if(!n.r)return n.l;let m=n.r;while(m.l)m=m.l;n.s=m.s;n.r=rm(n.r,m.s.id);}return n;};
+    this.root=rm(this.root,id);if(done)this.cnt--;return done;}
+  inorder(){const o=[];const f=n=>{if(!n)return;f(n.l);o.push(n.s);f(n.r);};f(this.root);return o;}
+  height(){const h=n=>n?1+Math.max(h(n.l),h(n.r)):0;return h(this.root);}
+}
+</script>
+
+<script>
+/* ===== Interface ===== */
+const $=id=>document.getElementById(id);
+const POS=[[60,200],[170,70],[190,330],[330,150],[420,235],[330,355],[520,95],[570,300]];
+const NS='http://www.w3.org/2000/svg';
+const el=(tag,attrs={},parent)=>{const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(parent)parent.appendChild(e);return e;};
+const eName=i=>NAMES[EDGES[i][0]]+' - '+NAMES[EDGES[i][1]];
+const zl=list=>list.length?list.map(i=>NAMES[i]).join(', '):'(none)';
+
+const st={mst:[],done:false,algo:'',shown:new Set(),rejected:new Set(),current:-1,closed:-1,cut:new Set(),contam:new Set(),flow:[],timer:null};
+const svg=$('svg'),pipeEls=[],nodeEls=[];
+
+/* build map once */
+EDGES.forEach((e,i)=>{
+  const[a,b]=[POS[e[0]],POS[e[1]]];
+  const g=el('g',{},svg);
+  const hit=el('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],class:'hit',tabindex:0,role:'button','aria-label':'Pipe '+eName(i)+', cost '+e[2]+'. Activate to simulate a leak.'},g);
+  const p=el('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],class:'pipe'},g);
+  const mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2;
+  el('rect',{x:mx-13,y:my-9,width:26,height:18,rx:9,class:'wpill'},g);
+  const t=el('text',{x:mx,y:my,class:'wtxt'},g);t.textContent=e[2];
+  const act=()=>leakOn(i);
+  hit.addEventListener('click',act);
+  hit.addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();act();}});
+  pipeEls.push(p);
+});
+NAMES.forEach((n,i)=>{
+  const g=el('g',{class:'node'+(i===0?' plant':'')},svg);
+  el('circle',{cx:POS[i][0],cy:POS[i][1],r:i===0?24:19},g);
+  const t=el('text',{x:POS[i][0],y:POS[i][1]},g);t.textContent=i===0?'Plant':n;
+  nodeEls.push(g);
+});
+
+/* selects */
+const fill=(id,items)=>{$(id).innerHTML=items.map(([v,t])=>`<option value="${v}">${t}</option>`).join('');};
+fill('selFlow',NAMES.slice(1).map((n,i)=>[i+1,n]).reverse().reverse());
+$('selFlow').value=7;
+fill('selCont',NAMES.slice(1).map((n,i)=>[i+1,n]));$('selCont').value=5;
+fill('selPipe',EDGES.map((e,i)=>[i,eName(i)+' ('+e[2]+')']));$('selPipe').value=EDGES.findIndex(e=>e[0]===2&&e[1]===5);
+fill('szone',NAMES.slice(1).map((n,i)=>[i+1,n]));
+
+function show(title,text,tone,target='out'){const o=$(target);o.className='out'+(tone?' '+tone:'');o.innerHTML='<strong>'+title+'</strong><p>'+text+'</p>';}
+function clearFault(){st.closed=-1;st.cut=new Set();st.contam=new Set();st.flow=[];}
+
+function draw(){
+  svg.classList.toggle('has-mst',st.shown.size>0||st.current>=0);
+  pipeEls.forEach((p,i)=>{
+    let c='pipe';
+    if(st.closed===i)c+=' closed';
+    else if(st.flowEdges&&st.flowEdges.has(i))c+=' flow';
+    else if(st.current===i)c+=' consider';
+    else if(st.shown.has(i))c+=' built';
+    else if(st.rejected.has(i))c+=' reject';
+    p.setAttribute('class',c);
+  });
+  nodeEls.forEach((g,i)=>{
+    let c='node'+(i===0?' plant':'');
+    if(st.cut.has(i))c+=' cut';else if(st.contam.has(i))c+=' contam';else if(st.flow.includes(i)&&i>0)c+=' flow';
+    g.setAttribute('class',c);
+  });
+  const built=cost([...st.shown]);
+  $('sBuilt').textContent=st.shown.size?built:'-';
+  $('sSave').textContent=st.done?(93-built)+' ('+(100*(93-built)/93).toFixed(1)+'%)':'-';
+}
+
+function logAdd(text,right,cls){
+  const ul=$('log');if(ul.firstElementChild&&ul.firstElementChild.classList.contains('empty'))ul.innerHTML='';
+  const li=document.createElement('li');li.className=cls;li.innerHTML='<span>'+text+'</span><span class="r">'+right+'</span>';ul.appendChild(li);ul.scrollTop=ul.scrollHeight;
+}
+
+function stopTimer(){if(st.timer){clearInterval(st.timer);st.timer=null;}}
+function resetBuild(){stopTimer();st.mst=[];st.done=false;st.algo='';st.shown=new Set();st.rejected=new Set();st.current=-1;st.flowEdges=null;clearFault();
+  $('log').innerHTML='<li class="empty" style="border:none">Build a network to see each pipe accepted or rejected.</li>';}
+
+function applyStep(s,algo){
+  const e=EDGES[s.i];
+  if(s.ok){st.shown.add(s.i);logAdd(eName(s.i)+' ('+e[2]+')','accepted','acc');}
+  else{st.rejected.add(s.i);logAdd(eName(s.i)+' ('+e[2]+')','rejected: cycle','rej');}
+}
+function finish(res,algo){
+  st.current=-1;st.mst=res.mst;st.done=true;st.algo=algo;st.shown=new Set(res.mst);
+  const all=93,c=cost(res.mst);
+  show(algo+"'s network is built",'<span class="mono">'+res.mst.length+' pipes, cost '+c+'</span> against '+all+' for every candidate pipe, a saving of '+(all-c)+' ('+(100*(all-c)/all).toFixed(1)+'%). Every zone is connected with no loops. Click a pipe to simulate a leak.','ok');
+  draw();
+}
+function build(algo,instant){
+  resetBuild();
+  const res=algo==='Kruskal'?kruskalSteps():primSteps();
+  const animate=$('anim').checked&&!instant&&!matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(!animate){res.steps.forEach(s=>applyStep(s,algo));finish(res,algo);return;}
+  let k=0;show('Building with '+algo,algo==='Kruskal'?'Pipes are tried from cheapest to dearest. A pipe is skipped if it would close a loop.':'Growing from the plant, always adding the cheapest pipe to a new zone.');
+  st.timer=setInterval(()=>{
+    if(k>0){const prev=res.steps[k-1];applyStep(prev,algo);}
+    if(k>=res.steps.length){stopTimer();finish(res,algo);return;}
+    st.current=res.steps[k].i;draw();k++;
+  },650);
+}
+function ensureBuilt(){if(st.done)return true;if(st.timer)return false;build('Kruskal',true);return true;}
+
+function flowTrace(){
+  if(!ensureBuilt())return;clearFault();
+  const t=+$('selFlow').value,A=adjOf(st.mst),path=dfsPath(A,0,t);
+  st.flow=path;st.flowEdges=new Set();
+  for(let k=0;k<path.length-1;k++)st.flowEdges.add(st.mst.find(i=>(EDGES[i][0]===path[k]&&EDGES[i][1]===path[k+1])||(EDGES[i][1]===path[k]&&EDGES[i][0]===path[k+1])));
+  draw();
+  show('Flow path to '+NAMES[t],'<span class="mono">'+path.map(i=>NAMES[i]).join(' &rarr; ')+'</span><br>'+(path.length-1)+' pipes crossed. Breadth-first order from the plant: <span class="mono">'+bfs(A,0).map(i=>NAMES[i]).join(' ')+'</span>','ok');
+}
+function leakOn(i){
+  if(!ensureBuilt())return;clearFault();st.flowEdges=null;$('selPipe').value=i;
+  if(!st.mst.includes(i)){draw();show('Pipe '+eName(i)+' is not built','It is only a candidate in this layout, so nothing is carrying water through it. No zones are affected.','warn');return;}
+  const cut=cutOff(st.mst,i);st.closed=i;st.cut=new Set(cut);draw();
+  show('Leak on '+eName(i),'Shutting only this pipe cuts off <strong style="display:inline">'+cut.length+' of 7</strong> zones: <span class="mono">'+zl(cut)+'</span>. The other '+(7-cut.length)+' keep their supply.'+(cut.length>=5?'<br>A spanning tree has no backup pipes, so a fault near the plant is costly.':''),'alert');
+}
+function contOn(){
+  if(!ensureBuilt())return;clearFault();st.flowEdges=null;
+  const z=+$('selCont').value,r=contamination(st.mst,z),pe=parentEdge(st.mst,z);
+  st.closed=pe;st.contam=new Set(r);draw();
+  show('Contamination at '+NAMES[z],'Close the feeding pipe '+eName(pe)+'. Water downstream can reach <span class="mono">'+zl(r)+'</span> ('+r.length+' zone'+(r.length>1?'s':'')+').','warn');
+}
+
+$('bK').onclick=()=>build('Kruskal');
+$('bP').onclick=()=>build('Prim');
+$('bReset').onclick=()=>{resetBuild();draw();show('Candidate pipes','All 13 possible pipes are shown with their costs. Building every one would cost 93.');};
+$('bFlow').onclick=flowTrace;
+$('bLeak').onclick=()=>leakOn(+$('selPipe').value);
+$('bCont').onclick=contOn;
+$('bClear').onclick=()=>{clearFault();st.flowEdges=null;draw();show('Highlights cleared','The network is back to normal.');};
+$('bBrute').onclick=()=>{const r=countTrees();const k=kruskalSteps();
+  show('Checked '+r.trees+' spanning trees','Cheapest possible layout costs <span class="mono">'+r.best+'</span>. The MST costs <span class="mono">'+cost(k.mst)+'</span>. '+(r.best===cost(k.mst)?'No cheaper network exists.':'Mismatch.'),r.best===cost(k.mst)?'ok':'alert','outBrute');};
+
+/* ===== Sensor registry ===== */
+const tree=new BST();
+function seed(){tree.root=null;tree.cnt=0;[[50,1],[30,2],[70,3],[20,4],[40,5],[60,6],[80,7]].forEach(([id,z])=>tree.insert({id,zone:z,drops:[]}));}
+seed();
+let tPath=[],tHit=-1,tAlarm=-1;
+function drawTree(){
+  const t=$('tree');t.innerHTML='';
+  const pos=new Map();let idx=0;
+  const walk=(n,d)=>{if(!n)return;walk(n.l,d+1);pos.set(n.s.id,{x:idx++*46+34,y:d*56+30,n});walk(n.r,d+1);};
+  walk(tree.root,0);
+  const w=Math.max(idx*46+34,300),h=Math.max(tree.height()*56+20,90);
+  t.setAttribute('viewBox','0 0 '+w+' '+h);t.setAttribute('width',w);
+  pos.forEach(p=>{[p.n.l,p.n.r].forEach(c=>{if(c){const q=pos.get(c.s.id);el('line',{x1:p.x,y1:p.y,x2:q.x,y2:q.y,class:'tl'},t);}});});
+  pos.forEach((p,id)=>{
+    let c='tn';if(tPath.includes(id))c+=' path';if(id===tHit)c+=' hit';if(id===tAlarm)c+=' alarm';
+    const g=el('g',{class:c},t);el('circle',{cx:p.x,cy:p.y,r:17},g);
+    const tx=el('text',{x:p.x,y:p.y},g);tx.textContent=id;
+  });
+}
+const sInfo=()=>'In-order: <span class="mono">'+tree.inorder().map(s=>s.id).join(' ')+'</span><br>Sensors: '+tree.cnt+', tree height: '+tree.height();
+function sOut(title,text,tone){show(title,text+'<br>'+sInfo(),tone,'outS');}
+function sid(){const v=+$('sid').value;return Number.isInteger(v)&&v>0?v:null;}
+$('bReg').onclick=()=>{const id=sid();if(!id)return sOut('Enter a sensor ID','Use a whole number from 1 to 999999.','warn');
+  tPath=[];tHit=-1;tAlarm=-1;const ok=tree.insert({id,zone:+$('szone').value,drops:[]});
+  if(ok){tPath=[];tHit=id;}drawTree();
+  sOut(ok?'Sensor S'+id+' registered':'Duplicate ID rejected',ok?'Placed in zone '+NAMES[+$('szone').value]+'.':'S'+id+' already exists, so the registry stays unchanged.',ok?'ok':'warn');};
+$('bSearch').onclick=()=>{const id=sid();if(!id)return sOut('Enter a sensor ID','Use a whole number from 1 to 999999.','warn');
+  const r=tree.search(id);tPath=r.path;tHit=r.node?id:-1;tAlarm=-1;drawTree();
+  if(r.node){const d=r.node.s.drops;sOut('Found S'+id+' in '+r.path.length+' step'+(r.path.length>1?'s':''),'Path: <span class="mono">'+r.path.join(' &rarr; ')+'</span>. Zone '+NAMES[r.node.s.zone]+'. Logged drops: '+(d.length?d.join(', ')+' psi':'none')+'.','ok');}
+  else sOut('S'+id+' not found','Searched '+r.path.length+' node'+(r.path.length===1?'':'s')+': <span class="mono">'+(r.path.join(' &rarr; ')||'tree is empty')+'</span>.','warn');};
+$('bDel').onclick=()=>{const id=sid();if(!id)return sOut('Enter a sensor ID','Use a whole number from 1 to 999999.','warn');
+  const ok=tree.remove(id);tPath=[];tHit=-1;tAlarm=-1;drawTree();sOut(ok?'Sensor S'+id+' deleted':'S'+id+' not found',ok?'The tree was re-linked using the in-order successor where needed.':'Nothing to delete.',ok?'ok':'warn');};
+$('bSorted').onclick=()=>{let base=Math.max(100,...tree.inorder().map(s=>s.id))+1,n=0;for(let k=0;k<6;k++)if(tree.insert({id:base+k,zone:1+(k%7),drops:[]}))n++;
+  tPath=[];tHit=-1;tAlarm=-1;drawTree();sOut('Inserted '+n+' ascending IDs','Each new ID goes to the right of the last one, so the tree grows into a chain. Search then costs one step per sensor, which is the O(n) worst case.','warn');};
+$('bSensReset').onclick=()=>{seed();tPath=[];tHit=-1;tAlarm=-1;drawTree();sOut('Registry reset','Back to the seven sample sensors from the report.');};
+$('bDrop').onclick=()=>{const id=sid(),psi=+$('spsi').value;if(!id||!(psi>=0))return sOut('Check the inputs','Enter a sensor ID and a pressure drop of 0 or more.','warn');
+  const r=tree.search(id);tPath=r.path;tHit=r.node?id:-1;tAlarm=-1;
+  if(!r.node){drawTree();return sOut('S'+id+' is not registered','Register it first.','warn');}
+  r.node.s.drops.push(psi);
+  if(psi<ALARM_PSI){drawTree();return sOut('Logged '+psi+' psi for S'+id,'Below the '+ALARM_PSI+' psi alarm level, so monitoring continues.','ok');}
+  tAlarm=id;tHit=-1;drawTree();
+  if(!ensureBuilt()){return sOut('Alarm raised','Wait for the network build to finish, then report again.','warn');}
+  const z=r.node.s.zone,pe=parentEdge(st.mst,z);clearFault();st.flowEdges=null;st.closed=pe;st.cut=new Set(cutOff(st.mst,pe));draw();
+  const cut=[...st.cut];
+  show('Leak alarm from S'+id,'Zone '+NAMES[z]+' dropped '+psi+' psi. Suspect pipe <span class="mono">'+eName(pe)+'</span>; closing it cuts off <span class="mono">'+zl(cut)+'</span> and the other '+(7-cut.length)+' zones keep supply.','alert');
+  sOut('Leak alarm from S'+id,'Pipe '+eName(pe)+' is now closed on the map. <button id="jump" style="margin-top:6px">Show map</button>','alert');
+  $('jump').onclick=()=>$('map').scrollIntoView({behavior:'smooth',block:'start'});};
+
+draw();drawTree();
+</script>
+
+</body></html>
